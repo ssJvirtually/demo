@@ -1,0 +1,58 @@
+name: Build Native Image
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-native:
+    name: Build Native Image
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+      
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+      
+      - name: Build Native Image
+        run: mvn clean native:compile -Pnative -DskipTests
+      
+      - name: Upload Native Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-native-linux
+          path: target/demo
+          retention-days: 14
+      
+      - name: Test Native Binary
+        run: |
+          if [ -f target/demo ]; then
+            echo "Native binary created successfully!"
+            ls -lh target/demo
+            ./target/demo &
+            APP_PID=$!
+            sleep 5
+            curl -f http://localhost:8080/ || exit 1
+            kill $APP_PID
+          else
+            echo "Native binary not found!"
+            exit 1
+          fi
